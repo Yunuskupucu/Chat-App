@@ -1,5 +1,6 @@
 import Conversation from "../models/conversation.modal.js";
 import Message from "../models/message.model.js";
+import { getReceiverSocketId } from "../socket/socket.js";
 
 export const sendMessage = async (req, res) => {
   try {
@@ -26,13 +27,18 @@ export const sendMessage = async (req, res) => {
       conversation.messages.push(newMessage._id);
     }
 
-    // SOCKET IO IMPLEMENTATION
-
     // await conversation.save();
     // await newMessage.save();
 
     // this will run in parallel
     await Promise.all([conversation.save(), newMessage.save()]);
+
+    // SOCKET IO IMPLEMENTATION
+    const receiverSocketId = getReceiverSocketId(receiverId);
+    if (receiverSocketId) {
+      //io.t0(<socketId>).emit() is used to send the events to the specific client. Can be used only on server side
+      io.to(receiverSocketId).emit("newMessage", newMessage);
+    }
 
     res.status(201).json(newMessage);
   } catch (error) {
@@ -48,9 +54,14 @@ export const getMessages = async (req, res) => {
 
     const conversation = await Conversation.findOne({
       participants: { $all: [senderId, userToChatId] },
-    }).populate("messages");
+    }).populate("messages"); // not referance but actual messages
 
-    res.status(200).json(conversation.messages);
+    if (!conversation) {
+      return res.status(200).json([]);
+    }
+    const messages = conversation.messages;
+
+    res.status(200).json(messages);
   } catch (error) {
     console.log("Error in sendMessage controller", error.message);
     res.status(500).json({ error: "Internal Server Error" });
